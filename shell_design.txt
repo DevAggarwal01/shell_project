@@ -1,0 +1,141 @@
+                        +--------------------+
+                        |        CS 439      |
+                        |  PROJECT 0: SHELL  |
+                        |   DESIGN DOCUMENT  |
+                        +--------------------+
+
+
+
+
+The questions in this design document should reflect the design of the code you
+wrote for the project.  Your grade will reflect both the quality of your answer
+in this document and the quality of the design implementation in your code. 
+If there is a portion of the project that you have not implemented, you cannot
+receive credit for related questions. For those questions, no response is 
+necessary beyond indicating that you did not implement that portion.
+
+
+For each question, you should include both the name of the file(s), function
+name(s), and the line numbers where the relevant code may be found---both the
+code that answers the question directly and any function that you refer to in
+your answer.
+
+
+These design documents will be completed and submitted as a group.  Please use
+this document as a guide for design and discuss the questions and their
+potential answers prior to beginning implementation.
+
+
+When you have completed your design document, submit it to the Canvas assignment
+Project 0 Design and Documentation.
+
+
+***Your submission must be a text file and each line must not extend pat 80
+characters.  In addition, your submission must contain all of the original
+material and not exceed 8,000 characters.  The character count will be measured
+using the Linux command wc.  (Note that rtf files are NOT text files.) 
+
+
+################
+TEAM INFO
+################
+Name:
+EID:
+CS login:
+Email:
+Unique Number:
+
+
+Name:
+EID:
+CS login:
+Email:
+Unique Number:
+
+
+
+Slip Days Used:
+
+
+################
+Preliminaries
+################
+(1) If you have any preliminary comments on your submission or notes for
+    the TA, please give them here.  If you did not implement all portions
+    of this project, that should be noted here.
+
+
+(2) Please cite any offline or online sources you consulted while
+    preparing your submission, other than the Linux documentation,
+    course text, and lecture notes.
+
+
+(3) Please paste a link to your GitLab repo below.
+
+
+################
+Questions regarding Part 0
+################
+(1) How many child processes are created when doFib() 
+    begins with an input of 5?  Show the return value for 
+    each child process, numbering the processes beginning 
+    with 0 (the original process) and incrementing for
+    each child process.
+
+
+(2) Explain how you communicated the return value of the 
+    child to the parent. What feature of wait() did you use?
+
+
+################
+Questions regarding Part 1
+################
+(1) In the provided utility function signal_action(), what does the call to
+  sigaction() do?  Why was sigaction() used instead of signal()?
+
+
+################
+Questions regarding Part 2
+################
+(1) What combination of structs, arrays, and other data structures 
+    did you use to represent a fully-parsed command? Pick another 
+    (reasonable) representation you could have used, and give one advantage 
+    and one disadvantage of the representation you chose to implement in
+    comparison to the data structure you chose here.
+
+    Note that you do not need to include concurrent commands in your answer. 
+    Part 2 does not include this advanced shell feature.
+
+
+(2) An invalid script file is one which does not contain anything (i.e. 
+    a size zero file). How did you detect and handle this condition?  
+    Describe one other (correct) design that you could have used.
+
+
+################
+Questions regarding Part 3
+################
+(1) Describe how your implementation ensures that concurrent
+    commands are executed concurrently instead of one after 
+    another.
+
+
+(2) One potential strategy for redirecting output is to run 
+    the following code:
+
+  ```
+  FILE* output = fopen(filename, "w");
+  stdout = output;
+  stderr = output;
+  ```
+
+  This causes everything that would normally be written to 
+  `stdout` to instead be written to the file described by 
+  filename. Unfortunately, this strategy does not work for 
+  output redirection in utcsh. More generally, it does not
+  work any time fork-and-exec is used and we want to 
+  redirect the output of the child process.
+
+  Explain why this technique does not work when used in 
+  conjunction with fork-and-exec, and why the dup2() 
+  technique does not suffer the same issue.
