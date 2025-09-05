@@ -19,6 +19,8 @@
  */
 int main(int argc, char **argv)
 {
+  printf("%d", (int) getpid());
+  
   return 0;
 }
 
