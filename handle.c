@@ -8,12 +8,21 @@
 #include "util.h"
 
 
-void handler(int sig) {
+void loop_handler(int sig) {
     ssize_t bytes;
     const int STDOUT = 1;
     bytes = write(STDOUT, "Nice try.\n", 10);
     if(bytes != 10)
       exit(-999);
+}
+
+void exit_handler(int sig) {
+    ssize_t bytes;
+    const int STDOUT = 1;
+    bytes = write(STDOUT, "exiting\n", 10);
+    if(bytes != 10)
+      exit(-999);
+    exit(1);
 }
 
 /*
@@ -27,9 +36,11 @@ void handler(int sig) {
  */
 int main(int argc, char **argv)
 {
-  printf("%d", (int) getpid());
+  printf("%d\n", (int) getpid());
   // ctrl + c is #2 signal
-  signal_action(2, handler);
+  signal_action(2, loop_handler);
+
+  signal_action(1, exit_handler);
 
   while(1) {
     printf("Still here\n");
