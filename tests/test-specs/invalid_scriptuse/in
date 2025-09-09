@@ -1,2 +1,3 @@
-tests/test-specs/invalid_scriptuse/in
+path tests/test-specs/invalid_scriptuse
+in
 exit

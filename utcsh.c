@@ -11,6 +11,8 @@ in the future */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
+#include <unistd.h>
 
 
 /* Global variables */
@@ -40,6 +42,7 @@ void exec_external_cmd (struct Command *cmd);
 
 int count_args(char **args);
 void print_errors();
+void remove_tabs(char *str);
 
 /* Main REPL: read, evaluate, and print. This function should remain relatively
    short: if it grows beyond 60 lines, you're doing too much in main() and
@@ -50,6 +53,20 @@ int main (int argc, char **argv)
     isScript = true;
   }
   FILE *input = isScript ? fopen(argv[1], "r") : stdin;
+  // checks if script is empty
+  if (isScript) {
+    int c = fgetc(input);
+    if (c == EOF) {
+        // file is empty
+        print_errors();
+        exit(1);
+    }
+    ungetc(c, input);  // put the char back so reading starts from beginning
+  }
+  if(count_args(argv) > 2 || (isScript && input == NULL)) {
+    print_errors();
+    exit(1);
+  }
   set_shell_path (default_shell_path);
 
   /* These two lines are just here to suppress certain warnings. You should
@@ -76,9 +93,9 @@ int main (int argc, char **argv)
 
       if (lineSize > 0 && line[lineSize - 1] == '\n') {
           line[lineSize - 1] = '\0';
-          lineSize--; 
+          lineSize--;
       }
-
+      remove_tabs(line);
       if(*line == '\0') {
         free(line);
         continue;
@@ -86,11 +103,25 @@ int main (int argc, char **argv)
       // TODO could be syntax errors in input?
       char **tokens = tokenize_command_line(line);
       struct Command cmd = parse_command(tokens);
+      // guards against whitespace or empty commands
       /* Evaluate */
       eval(&cmd);
       /* Print (optional) */
     }
   return 0;
+}
+
+void remove_tabs(char *str) {
+    char *src = str;
+    char *dst = str;
+    while (*src != '\0') {
+        if (*src != '\t') {
+            *dst = *src;
+            dst += 1;
+        }
+        src += 1;
+    }
+    *dst = '\0';
 }
 
 /* NOTE: In the skeleton code, all function bodies below this line are dummy
@@ -114,6 +145,7 @@ char **tokenize_command_line (char *cmdline)
     i++;
     token = strtok_r(NULL, " ", &saveptr);
   }
+  tokens[i] = '\0';
   return tokens;
 }
 
@@ -143,6 +175,35 @@ void eval (struct Command *cmd)
   if(try_exec_builtin(cmd) == 1) {
     return; // If it was a built-in command, we executed it and can return
   }
+  // external command
+  // 1. check if absolute path using is_absolute_path
+  // 2. if absolute path, check that file exists and is executable using exe_exists_in_dir. exe_exists will check both
+  // 3. if not absolute path, then do a loop through shell_paths and call joinpath between each shell_path command like "ls". 
+  // if path contains "/bin" and "/usr/bin", then loop will check /bin/ls and /usr/bin/ls using exe_exists_in_dir
+  // alter cmd->program to be the full path if found. if not found, print error and return
+  if(is_absolute_path(cmd->program) == 1) {
+
+  } else {
+    bool found = false;
+    for(int i = 0; i < MAX_ENTRIES_IN_SHELLPATH; i++) {
+      if(shell_paths[i][0] == '\0') {
+        break;
+      }
+      char *dir = shell_paths[i];
+      char *fullPath = exe_exists_in_dir(dir, cmd->program, false);
+      if(fullPath != NULL) {
+        cmd->program = fullPath;
+        cmd->args[0] = fullPath;
+        found = true;
+        break;
+      }
+    }
+    if(!found) {
+      print_errors();
+      return;
+    }
+  }
+
   exec_external_cmd(cmd);
   
 }
@@ -167,12 +228,17 @@ int try_exec_builtin (struct Command *cmd)
       print_errors();
       return 1;
     }
-    chdir(cmd->args[0]);
+    if(chdir(cmd->args[1]) == -1) {
+      print_errors();
+    }
+    
     return 1;
   }
 
   if(strcmp(cmd->program, "path") == 0) {
-    // set_shell_path(cmd->args);
+    if(set_shell_path(&cmd->args[1]) == 0) {
+      print_errors();
+    }
     return 1;
   }
 
@@ -189,7 +255,7 @@ int count_args(char **args) {
 
 void print_errors() {
   char emsg[30] = "An error has occurred\n";
-  int nbytes_written = write(2, emsg, strlen(emsg));
+  int nbytes_written = write(STDERR_FILENO, emsg, strlen(emsg));
   if(nbytes_written != strlen(emsg)){
     exit(2);
   }
@@ -207,15 +273,15 @@ void exec_external_cmd (struct Command *cmd)
     print_errors();
     return;
   } else if(pid == 0) { // Child process
-    execv(cmd->program, cmd->args);
-    // exec fails if it returns
-    print_errors();
-    return;
+    if(execv(cmd->program, cmd->args) == -1) {
+      print_errors();
+      exit(1); // kills child process. return would fail to kill it.
+    }
   } else { // Parent process
     int status;
     waitpid(pid, &status, 0);
     if(WIFEXITED(status) && WEXITSTATUS(status) != 0) {
-      print_errors();
+      // print_errors();
     }
   }
   return;

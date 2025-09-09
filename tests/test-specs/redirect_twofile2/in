@@ -1,2 +1,2 @@
-ls > /tmp/ans/utcsh/aaaaa /tmp/ans/utcsh/bbbbb   
+ls > /tmp/dev4dev/utcsh/aaaaa /tmp/dev4dev/utcsh/bbbbb   
 exit
