@@ -3,6 +3,7 @@
 
   <Put your name and CS login ID here>
   Dev Aggarwal - dev4dev
+  Hrutvik Rao Palutla Venkata - hrutvikp
 */
 
 /* Read the additional functions from util.h. They may be beneficial to you
@@ -13,6 +14,7 @@ in the future */
 #include <string.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <fcntl.h> 
 
 
 /* Global variables */
@@ -35,6 +37,7 @@ struct Command
 /* Here are the functions we recommend you implement */
 
 char **tokenize_command_line (char *cmdline);
+struct Command *split_into_commands(char **tokens);
 struct Command parse_command (char **tokens);
 void eval (struct Command *cmd);
 int try_exec_builtin (struct Command *cmd);
@@ -47,73 +50,95 @@ void remove_tabs(char *str);
 /* Main REPL: read, evaluate, and print. This function should remain relatively
    short: if it grows beyond 60 lines, you're doing too much in main() and
    should try to move some of that work into other functions. */
-int main (int argc, char **argv)
-{
-  if(argc == 2) { // command is 1 argument, script file is 2nd argument
-    isScript = true;
-  }
-  FILE *input = isScript ? fopen(argv[1], "r") : stdin;
-  // checks if script is empty
-  if (isScript) {
-    int c = fgetc(input);
-    if (c == EOF) {
-        // file is empty
+int main (int argc, char **argv) {
+    // two arguments: command, script file
+    if (argc == 2) {
+        isScript = true;
+    }
+    // input: either script file or standard input
+    FILE *input = isScript ? fopen(argv[1], "r") : stdin;
+    // checks if script is empty
+    if (isScript) {
+        int c = fgetc(input);
+        if (c == EOF) {
+            // file is empty
+            print_errors();
+            exit(1);
+        }
+        // put the char back so reading starts from beginning if not empty script file
+        ungetc(c, input);
+    }
+    // if more than two arguments or script file not accessible, exit
+    if (argc > 2 || (isScript && input == NULL)) {
         print_errors();
         exit(1);
     }
-    ungetc(c, input);  // put the char back so reading starts from beginning
-  }
-  if(count_args(argv) > 2 || (isScript && input == NULL)) {
-    print_errors();
-    exit(1);
-  }
-  set_shell_path (default_shell_path);
+    // initialize shell path to default path (may be changed later by path command)
+    set_shell_path(default_shell_path);
 
-  /* These two lines are just here to suppress certain warnings. You should
-   * delete them when you implement Part 1.4 */
-  (void) argc;
-  (void) argv;
+    __ssize_t lineSize;
+    size_t len = 0;
 
-  __ssize_t lineSize;
-  size_t len = 0;
+    // REPl (read-evaluate-print loop)
+    while (true) {
+        // print shell prompt if no script
+        if (!isScript) {
+            printf("%s", prompt);
+        }
 
-  while (1)
-    {
-      if(!isScript) printf("%s", prompt);
+        // read part of REPL
+        // getline will allocate memory for line, which we must free later
+        char* line = NULL;
+        lineSize = getline(&line, &len, input);
+        if(lineSize == -1) {
+            free(line);
+            exit(0);
+        }
+        // strip newline character if present
+        if (lineSize > 0 && line[lineSize - 1] == '\n') {
+            line[lineSize - 1] = '\0';
+            lineSize--;
+        }
+        // guards against empty lines
+        remove_tabs(line);
+        if(*line == '\0') {
+            free(line);
+            continue;
+        }
 
-      /* Read */
-      // TODO line needs to be freed at the end
-      char *line = NULL;
+        // evaluate part of REPL
+        // tokenize command and split it into multiple commands if necessary
+        char** tokens = tokenize_command_line(line);
+        struct Command *cmds = split_into_commands(tokens);
+        // loop over all commands
+        for (int i = 0; cmds[i].program != NULL; i++) {
+            eval(&cmds[i]);
+        }
 
-      lineSize = getline(&line, &len, input);
-      if(lineSize == -1) {
+        // print part of REPL
+
+        // free allocated memory
         free(line);
-        exit(0);
-      }
-
-      if (lineSize > 0 && line[lineSize - 1] == '\n') {
-          line[lineSize - 1] = '\0';
-          lineSize--;
-      }
-      remove_tabs(line);
-      if(*line == '\0') {
-        free(line);
-        continue;
-      }
-      // TODO could be syntax errors in input?
-      char **tokens = tokenize_command_line(line);
-      struct Command cmd = parse_command(tokens);
-      // guards against whitespace or empty commands
-      /* Evaluate */
-      eval(&cmd);
-      /* Print (optional) */
+        free(tokens);
     }
-  return 0;
+    return 0;
 }
 
-void remove_tabs(char *str) {
-    char *src = str;
-    char *dst = str;
+void print_errors() {
+  char emsg[30] = "An error has occurred\n";
+  int nbytes_written = write(STDERR_FILENO, emsg, strlen(emsg));
+  if(nbytes_written != strlen(emsg)){
+    exit(2);
+  }
+}
+
+
+/**
+ * Removes all tab characters from a string in place.
+ */
+void remove_tabs(char *s) {
+    char* src = s;
+    char* dst = s;
     while (*src != '\0') {
         if (*src != '\t') {
             *dst = *src;
@@ -128,123 +153,198 @@ void remove_tabs(char *str) {
 implementations made to avoid warnings. You should delete them and replace them
 with your own implementation. */
 
-/** Turn a command line into tokens with strtok
+/** 
+ * Turns a command line into tokens with strtok.
  *
  * This function turns a command line into an array of arguments, making it
  * much easier to process. First, you should figure out how many arguments you
  * have, then allocate a char** of sufficient size and fill it using strtok()
  */
-char **tokenize_command_line (char *cmdline)
-{
-  char **tokens = malloc(sizeof(char*) * MAX_WORDS_PER_CMDLINE);
-  char *saveptr;
-  char *token = strtok_r(cmdline, " ", &saveptr);
-  int i = 0;
-  while (token != NULL) {
-    tokens[i] = token;
-    i++;
-    token = strtok_r(NULL, " ", &saveptr);
-  }
-  tokens[i] = '\0';
-  return tokens;
+char **tokenize_command_line (char *cmdline) {
+    // to store the tokens
+    char** tokens = malloc(sizeof(char*) * MAX_WORDS_PER_CMDLINE);
+    // split line into tokens using strtok and command line
+    char* saveptr;
+    char* token = strtok_r(cmdline, " ", &saveptr);
+    int i = 0;
+    while (token) {
+        tokens[i] = token;
+        token = strtok_r(NULL, " ", &saveptr);
+        i++;
+    }
+    // indicate end of tokens
+    tokens[i] = '\0';
+    return tokens;
 }
 
-/** Turn tokens into a command.
+
+/**
+ * Splits tokens into multiple commands separated by "&".
+ *
+ * Returns an array of these 
+ */
+struct Command *split_into_commands(char **tokens) {
+    // allocate array of commands
+    struct Command* cmds = malloc(sizeof(struct Command) * MAX_WORDS_PER_CMDLINE);
+    int cmd_count = 0;
+    int start = 0;
+    // loop through tokens to find & and split commands
+    for (int i = 0; tokens[i] != NULL; i++) {
+        if (strcmp(tokens[i], "&") == 0) {
+            // terminate this command’s args
+            tokens[i] = NULL;
+            cmds[cmd_count] = parse_command(&tokens[start]);
+            cmd_count++;
+            // next command starts after &
+            start = i + 1;
+        }
+    }
+    // to account for final command (after last & or whole line if no &)
+    if (tokens[start] != NULL) {
+        cmds[cmd_count] = parse_command(&tokens[start]);
+        cmd_count++;
+    }
+    // mark end of array
+    cmds[cmd_count].program = NULL;
+    cmds[cmd_count].args = NULL;
+    cmds[cmd_count].outputFile = NULL;
+    return cmds;
+}
+
+
+/** 
+ * Turns tokens into a command.
  *
  * The `struct Command` represents a command to execute. This is the preferred
  * format for storing information about a command, though you are free to change
  * it. This function takes a sequence of tokens and turns them into a struct
  * Command.
  */
-struct Command parse_command (char **tokens)
-{
-  struct Command dummy = {.args = tokens, .outputFile = NULL, .program = tokens[0]};
-  return dummy;
+struct Command parse_command(char **tokens) {
+    struct Command cmd;
+    cmd.outputFile = NULL;
+    // case for empty command
+    if (tokens == NULL || tokens[0] == NULL) {
+        return cmd;
+    }
+    // index in tokens of the redirect operatior >, -1 if not found
+    int redirectIndex = -1;
+    // look for > in tokens
+    for (int i = 0; tokens[i] != NULL; i++) {
+        if (strcmp(tokens[i], ">") == 0) {
+            if (redirectIndex != -1) {
+                // more than one > found
+                print_errors();
+                return cmd;
+            }
+            // found >, store index
+            redirectIndex = i;
+        }
+    }
+    if (redirectIndex != -1) {
+        // > cannot be the first token, print errors if so
+        if (redirectIndex == 0) {
+            print_errors();
+            return cmd;
+        }
+        // there must be exactly one token after >, print errors if not
+        if (tokens[redirectIndex + 1] == NULL || tokens[redirectIndex + 2] != NULL) {
+            print_errors();
+            return cmd;
+        }
+        // set outputFile to the token after >
+        cmd.outputFile = tokens[redirectIndex + 1];
+        tokens[redirectIndex] = NULL;  // truncate args at >
+    }
+    // set args and program
+    cmd.args = tokens;
+    cmd.program = tokens[0];
+    return cmd;
 }
 
-/** Evaluate a single command
+/** 
+ * Evaluates a single command.
  *
  * Both built-ins and external commands can be passed to this function--it
  * should work out what the correct type is and take the appropriate action.
  */
-void eval (struct Command *cmd)
-{
-  if(cmd == NULL || cmd->program == NULL) {
-    return;
-  }
-  if(try_exec_builtin(cmd) == 1) {
-    return; // If it was a built-in command, we executed it and can return
-  }
-  // external command
-  // 1. check if absolute path using is_absolute_path
-  // 2. if absolute path, check that file exists and is executable using exe_exists_in_dir. exe_exists will check both
-  // 3. if not absolute path, then do a loop through shell_paths and call joinpath between each shell_path command like "ls". 
-  // if path contains "/bin" and "/usr/bin", then loop will check /bin/ls and /usr/bin/ls using exe_exists_in_dir
-  // alter cmd->program to be the full path if found. if not found, print error and return
-  if(is_absolute_path(cmd->program) == 1) {
-
-  } else {
-    bool found = false;
-    for(int i = 0; i < MAX_ENTRIES_IN_SHELLPATH; i++) {
-      if(shell_paths[i][0] == '\0') {
-        break;
-      }
-      char *dir = shell_paths[i];
-      char *fullPath = exe_exists_in_dir(dir, cmd->program, false);
-      if(fullPath != NULL) {
-        cmd->program = fullPath;
-        cmd->args[0] = fullPath;
-        found = true;
-        break;
-      }
+void eval(struct Command *cmd) {
+    // null check
+    if (cmd == NULL || cmd->program == NULL) {
+        return;
     }
-    if(!found) {
-      print_errors();
-      return;
+    // if it was a built-in command and we've executed it, can return
+    if (try_exec_builtin(cmd) == 1) {
+        return; 
     }
-  }
-
-  exec_external_cmd(cmd);
-  
+    // we have an external command
+    // check if absolute path
+    if(!is_absolute_path(cmd->program)) {
+        bool found = false;
+        // if not absolute, loop through shell paths and find the right shell path
+        for(int i = 0; i < MAX_ENTRIES_IN_SHELLPATH; i++) {
+            if (shell_paths[i][0] == '\0') {
+                break;
+            }
+            char* dir = shell_paths[i];
+            char* fullPath = exe_exists_in_dir(dir, cmd->program, false);
+            // alter cmd->program to be the full path if found
+            if (fullPath != NULL) {
+                cmd->program = fullPath;
+                cmd->args[0] = fullPath;
+                found = true;
+                break;
+            }
+        }
+        // if not external not found, print errors and return
+        if (!found) {
+            print_errors();
+            return;
+        }
+    }
+    // execute the external command
+    exec_external_cmd(cmd);
 }
 
-/** Execute built-in commands
- *
- * If the command is a built-in command, execute it and return 1 if appropriate
- * If the command is not a built-in command, do nothing and return 0
+
+/** 
+ * Executes built-in commands (exit, cd, path)
+ * - If the command is a built-in command, execute it and return 1 (regardless of error or not).
+ * - If the command is not a built-in command, do nothing and return 0.
  */
-int try_exec_builtin (struct Command *cmd)
-{
-  if(strcmp(cmd->program, "exit") == 0) {
-    if(count_args(cmd->args) != 1) {
-      print_errors();
-      return 1;
+int try_exec_builtin (struct Command *cmd) {
+    // case for exit: make sure no extra args (if so, error) and exit process
+    if (strcmp(cmd->program, "exit") == 0) {
+        if (count_args(cmd->args) != 1) {
+            print_errors();
+            return 1;
+        }
+        exit(0);
     }
-    exit(0);
-  }
-
-  if(strcmp(cmd->program, "cd") == 0) {
-    if(count_args(cmd->args) != 2) {
-      print_errors();
-      return 1;
+    // case for cd: make sure exactly one arg (if not, error) and chdir to that directory (if fails, error)
+    if (strcmp(cmd->program, "cd") == 0) {
+        if (count_args(cmd->args) != 2) {
+            print_errors();
+            return 1;
+        }
+        if (chdir(cmd->args[1]) == -1) {
+            print_errors();
+        }
+        return 1;
     }
-    if(chdir(cmd->args[1]) == -1) {
-      print_errors();
+    // case for path: set shell path to args after "path" (if fails, error)
+    if(strcmp(cmd->program, "path") == 0) {
+        if(set_shell_path(&cmd->args[1]) == 0) {
+            print_errors();
+        }
+        return 1;
     }
-    
-    return 1;
-  }
-
-  if(strcmp(cmd->program, "path") == 0) {
-    if(set_shell_path(&cmd->args[1]) == 0) {
-      print_errors();
-    }
-    return 1;
-  }
-
-  return 0;
+    return 0;
 }
 
+/** 
+ * Count the number of arguments in a command (command presented as null-terminated array of strings).
+ */
 int count_args(char **args) {
     int count = 0;
     while (args[count] != NULL) {
@@ -253,36 +353,47 @@ int count_args(char **args) {
     return count;
 }
 
-void print_errors() {
-  char emsg[30] = "An error has occurred\n";
-  int nbytes_written = write(STDERR_FILENO, emsg, strlen(emsg));
-  if(nbytes_written != strlen(emsg)){
-    exit(2);
-  }
-}
 
-/** Execute an external command
+/** 
+ * Executes an external command.
  *
  * Execute an external command by fork-and-exec. Should also take care of
  * output redirection, if any is requested
  */
-void exec_external_cmd (struct Command *cmd)
-{
-  int pid = fork();
-  if(pid < 0) {
-    print_errors();
+void exec_external_cmd (struct Command *cmd) {
+    int pid = fork();
+    if (pid < 0) {
+        // fork failed
+        print_errors();
+        return;
+    } else if(pid == 0) {
+        // in child process: execute the command and exit (if error, print error and exit with 1)
+        // if redirection requested
+        if (cmd->outputFile != NULL) {
+            // create/truncate output file, permissions rw-rw-rw-
+            int fileDescriptor = open(cmd->outputFile, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+            if (fileDescriptor < 0) {
+                print_errors();
+                exit(1);
+            }
+            // duplicate file descriptor onto stdout and stderr, prnt errors if fails
+            if (dup2(fileDescriptor, STDOUT_FILENO) < 0 || dup2(fileDescriptor, STDERR_FILENO) < 0) {
+                print_errors();
+                close(fileDescriptor);
+                exit(1);
+            }
+            close(fileDescriptor);
+        }
+
+        // now replace child image
+        if (execv(cmd->program, cmd->args) == -1) {
+            print_errors();
+            exit(1);
+        }
+    } else { 
+        // in parent process
+        int status;
+        waitpid(pid, &status, 0);
+    }
     return;
-  } else if(pid == 0) { // Child process
-    if(execv(cmd->program, cmd->args) == -1) {
-      print_errors();
-      exit(1); // kills child process. return would fail to kill it.
-    }
-  } else { // Parent process
-    int status;
-    waitpid(pid, &status, 0);
-    if(WIFEXITED(status) && WEXITSTATUS(status) != 0) {
-      // print_errors();
-    }
-  }
-  return;
 }
