@@ -9,9 +9,11 @@
 
 int main(int argc, char **argv)
 {
-  if(argc == 2) {
-    const pid = atoi(argv[1]);
-    kill(pid, 1);
-  }
-  return 0;
+    // two arguments needed: mykill executable, process
+    if (argc == 2) {
+        // get process ID, kill process by passing in SIGUSR1
+        const int pid = atoi(argv[1]);
+        kill(pid, 10);
+    }
+    return 0;
 }

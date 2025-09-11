@@ -1,5 +1,5 @@
 path tests/test-utils /bin
-p6.sh > /tmp/dev4dev/utcsh/output25
-cat /tmp/dev4dev/utcsh/output25
-rm -f /tmp/dev4dev/utcsh/output25
+p6.sh > /tmp/hrutvikp/utcsh/output25
+cat /tmp/hrutvikp/utcsh/output25
+rm -f /tmp/hrutvikp/utcsh/output25
 exit

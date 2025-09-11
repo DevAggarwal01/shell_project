@@ -8,22 +8,35 @@
 #include "util.h"
 
 
-void loop_handler(int sig) {
+/**
+ * Handles SIGINT (Ctrl + C/ ^C).
+ */
+void interrupt_handler() {
+    // attribution (modified here): Section 1.2, https://www.cs.utexas.edu/~ans/classes/cs439/projects/shell_project/shell.html
     ssize_t bytes;
     const int STDOUT = 1;
     bytes = write(STDOUT, "Nice try.\n", 10);
-    if(bytes != 10)
-      exit(-999);
+    if (bytes != 10) {
+        exit(-999);
+    }
 }
 
-void exit_handler(int sig) {
+
+/**
+ * Handles SIGUSR1 (user-defined signal).
+ */
+void exit_handler() {
+    // attribution (modified here): Section 1.2, https://www.cs.utexas.edu/~ans/classes/cs439/projects/shell_project/shell.html
     ssize_t bytes;
     const int STDOUT = 1;
-    bytes = write(STDOUT, "exiting\n", 10);
-    if(bytes != 10)
-      exit(-999);
-    exit(1);
+    bytes = write(STDOUT, "exiting\n", 8);
+    if (bytes != 8) {
+        exit(-999);
+    }
+    // end the process
+    exit(0);
 }
+
 
 /*
  * First, print out the process ID of this process.
@@ -34,21 +47,18 @@ void exit_handler(int sig) {
  * Finally, loop forever, printing "Still here\n" once every
  * second.
  */
-int main(int argc, char **argv)
-{
-  printf("%d\n", (int) getpid());
-  // ctrl + c is #2 signal
-  signal_action(2, loop_handler);
-
-  signal_action(1, exit_handler);
-
-  while(1) {
-    printf("Still here\n");
-    nanosleep((const struct timespec[]){{1, 0}}, NULL);
-  }
-  return 0;
+int main(int argc, char **argv) {
+    // print out the process ID
+    printf("%d\n", (int) getpid());
+    // for interrupt signal
+    signal_action(2, interrupt_handler);
+    // for user-defined kill signal
+    signal_action(10, exit_handler);
+    // loop every second to print 
+    while (true) {
+        printf("Still here\n");
+        nanosleep((const struct timespec[]){{1, 0}}, NULL);
+    }
+    return 0;
 }
-
-
-
 

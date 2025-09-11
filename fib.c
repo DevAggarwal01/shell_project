@@ -53,44 +53,53 @@ int main (int argc, char **argv)
  * doFib() exactly once.
  */
 static void doFib (int n, int doPrint) {
-  if(n == 0 || n == 1) {
-    if(doPrint) {
-      printf("%d\n", n);
-      exit(0);
-    } else {
-      exit(n);
-    }
-  } else {
-    pid_t process = fork();
-
-    if(process < 0) {
-      unix_error("Fork error");
-    } else if(process == 0) { // child process
-      doFib(n - 2, 0);
-    } else { // parent process
-      int firstFib;
-      waitpid(process, &firstFib, 0);
-      int first = WEXITSTATUS(firstFib);
-
-      pid_t process2 = fork();
-      if(process2 < 0) {
-        unix_error("Fork error");
-      } else if(process2 == 0) { // child process
-        doFib(n - 1, 0);
-      } else { // parent process
-        int secondFib;
-        waitpid(process2, &secondFib, 0);
-        int second = WEXITSTATUS(secondFib);
-
-        int result = first + second;
-        if(doPrint) {
-          printf("%d\n", result);
-          exit(0);
-        } else {
-          exit(result);
+    // base case
+    if (n == 0 || n == 1) {
+        if (doPrint) {
+            // prints only happen when you need the output for the fib command
+            printf("%d\n", n);
+            exit(0);
         }
-      }
-
+        // status is just Fibonacci number if result is needed
+        exit(n);
     }
-  }
+
+    // need two processes to get the two numbers before this one in the Fibonacci sequence
+    // process 1: previous previous Fibonacci number (fib1)
+    pid_t process1 = fork();
+    if (process1 < 0) {
+        // fork failed
+        unix_error("There was an error while forking a the process.");
+    } else if (process1 == 0) {
+        // in forked child process
+        doFib(n - 2, 0);
+    }
+    // only parent process here, because child will go into recursion and exit there
+    int process1Status;
+    waitpid(process1, &process1Status, 0);
+    int fib1 = WEXITSTATUS(process1Status);
+
+    // process 2: previous Fibonacci number (fib2)
+    pid_t process2 = fork();
+    if (process2 < 0) {
+        // fork failed
+        unix_error("There was an error while forking a process.");
+    } else if (process2 == 0) {
+        // in forked child process
+        doFib(n - 1, 0);
+    }
+    // only parent process here, because child will go into recursion and exit there
+    int process2Status;
+    waitpid(process2, &process2Status, 0);
+    int fib2 = WEXITSTATUS(process2Status);
+
+    // calculate result and print out result if needed 
+    int result = fib1 + fib2;
+    if (doPrint) {
+        // prints only happen when you need the output for the fib command
+        printf("%d\n", result);
+        exit(0);
+    }
+    // status is just Fibonacci number if result is needed
+    exit(result);
 }
