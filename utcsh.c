@@ -46,16 +46,18 @@ void exec_external_cmd (struct Command *cmd);
 
 int count_args(char **args);
 void print_errors();
-void print_error(char* emsg);
 void remove_tabs(char *str);
 
 /* Main REPL: read, evaluate, and print. This function should remain relatively
    short: if it grows beyond 60 lines, you're doing too much in main() and
    should try to move some of that work into other functions. */
 int main (int argc, char **argv) {
-    // two arguments: command, script file
+    // two arguments: command, script file [more is error]
     if (argc == 2) {
         isScript = true;
+    } if (argc > 2) {
+        print_errors();
+        exit(1);
     }
     // input: either script file or standard input
     FILE *input = isScript ? fopen(argv[1], "r") : stdin;
@@ -64,26 +66,15 @@ int main (int argc, char **argv) {
         print_errors();
         exit(1);
     }
-    // checks if script is empty
     if (isScript) {
+        // checks if script is empty by checking if first character is EOF
         int c = fgetc(input);
         if (c == EOF) {
-            if (ferror(input)) {
-                print_errors(); // actual read error
-            } else {
-                print_errors(); // empty file
-            }
-            exit(1);
-        }
-        if (ungetc(c, input) == EOF) {
             print_errors();
             exit(1);
         }
-    }
-    // if more than two arguments or script file not accessible, exit
-    if (argc > 2 || (isScript && input == NULL)) {
-        print_errors();
-        exit(1);
+        // put character back for future reading
+        c = ungetc(c, input);
     }
     // initialize shell path to default path (may be changed later by path command)
     set_shell_path(default_shell_path);
@@ -113,7 +104,7 @@ int main (int argc, char **argv) {
         }
         // guards against empty lines
         remove_tabs(line);
-        if(*line == '\0') {
+        if (*line == '\0') {
             free(line);
             continue;
         }
@@ -122,7 +113,7 @@ int main (int argc, char **argv) {
         // tokenize command and split it into multiple commands if necessary
         char** tokens = tokenize_command_line(line);
         struct Command *cmds = split_into_commands(tokens);
-        // evaluate all commands on the line
+        // evaluate all commands on the line (concurrently if multiple)
         for (int i = 0; cmds[i].program != NULL; i++) {
             eval(&cmds[i]);
         }
@@ -136,9 +127,12 @@ int main (int argc, char **argv) {
         // print part of REPL: nothing to print for this shell
 
         // free allocated memory
-        free(line);
-        free(tokens);
+        free(line); // tokens arrays has pointers into line (and cmds also point to tokens), so free line first
+        free(tokens); // free tokens array (not the strings inside, those are already freed)
+        free(cmds); // free commands array (not the strings inside, those are already freed)
     }
+    // close the input
+    fclose(input);
     return 0;
 }
 
@@ -146,9 +140,10 @@ int main (int argc, char **argv) {
  * Prints the standard error message to stderr as per the project specifications.
  */
 void print_errors() {
+    // Attribution: Section 2.4, https://www.cs.utexas.edu/~ans/classes/cs439/projects/shell_project/shell.html
     char emsg[30] = "An error has occurred\n";
     int nbytes_written = write(STDERR_FILENO, emsg, strlen(emsg));
-    if(nbytes_written != strlen(emsg)){
+    if (nbytes_written != strlen(emsg)) {
         exit(2);
     }
 }
@@ -158,8 +153,10 @@ void print_errors() {
  * Removes all tab characters from a string in place.
  */
 void remove_tabs(char *s) {
+    // in place removal of tabs
     char* src = s;
     char* dst = s;
+    // copy over non-tab characters
     while (*src != '\0') {
         if (*src != '\t') {
             *dst = *src;
@@ -167,12 +164,11 @@ void remove_tabs(char *s) {
         }
         src += 1;
     }
+    // null terminate the new string
     *dst = '\0';
 }
 
-/* NOTE: In the skeleton code, all function bodies below this line are dummy
-implementations made to avoid warnings. You should delete them and replace them
-with your own implementation. */
+/* MAIN FUNCTIONS */
 
 /** 
  * Turns a command line into tokens with strtok.
@@ -182,34 +178,44 @@ with your own implementation. */
  * have, then allocate a char** of sufficient size and fill it using strtok()
  */
 char** tokenize_command_line(char *cmdline) {
+    // allocate array of tokens
     char** tokens = malloc(sizeof(char*) * MAX_WORDS_PER_CMDLINE);
     if (tokens == NULL) {
+        // if allocation fails, print error and exit
         print_errors();
         exit(1);
     }
+    // tokenize command line by spaces, but also separate out & if present
     char* saveptr;
     char* token = strtok_r(cmdline, " ", &saveptr);
     int i = 0;
     while (token && i < MAX_WORDS_PER_CMDLINE) {
         char* p = token;
+        // logic to separate out & operators. each & is its own token
         while (*p) {
             if (*p == '&') {
                 // terminate before &
                 if (p != token) {
                     *p = '\0';
-                    tokens[i++] = token;
+                    tokens[i] = token;
+                    i += 1;
                 }
                 // add "&"
-                tokens[i++] = "&";
+                tokens[i] = "&";
                 token = p + 1;
+                i += 1;
             }
-            p++;
+            p += 1;
         }
+        // add the final token if not empty
         if (*token != '\0') {
-            tokens[i++] = token;
+            tokens[i] = token;
+            i += 1;
         }
+        // get next token
         token = strtok_r(NULL, " ", &saveptr);
     }
+    // null terminate and return the array
     tokens[i] = NULL;
     return tokens;
 }
@@ -218,7 +224,7 @@ char** tokenize_command_line(char *cmdline) {
 /**
  * Splits tokens into multiple commands separated by "&".
  *
- * Returns an array of these 
+ * Returns an array of these commands, terminated by a command with all fields NULL.
  */
 struct Command *split_into_commands(char **tokens) {
     // allocate array of commands
@@ -254,7 +260,7 @@ struct Command *split_into_commands(char **tokens) {
 
 
 /** 
- * Turns tokens into a command.
+ * Turns a sequence of tokens into a single command.
  *
  * The `struct Command` represents a command to execute. This is the preferred
  * format for storing information about a command, though you are free to change
@@ -262,6 +268,7 @@ struct Command *split_into_commands(char **tokens) {
  * Command.
  */
 struct Command parse_command(char **tokens) {
+    // initialize command struct with nulls
     struct Command cmd;
     cmd.args = NULL;
     cmd.outputFile = NULL;
@@ -408,7 +415,7 @@ void exec_external_cmd(struct Command *cmd) {
     if (pid < 0) {
         // fork failed
         print_errors();
-        return;
+        exit(1);
     } else if(pid == 0) {
         // in child process: execute the command and exit (if error, print error and exit with 1)
         // if redirection requested
@@ -428,14 +435,16 @@ void exec_external_cmd(struct Command *cmd) {
             close(fileDescriptor);
         }
 
-        // now replace child image
+        // now execute the external command
         if (execv(cmd->program, cmd->args) == -1) {
             print_errors();
             exit(1);
         }
     } else { 
+        // in parent process: store child pid to wait for later
         if (nchildren < MAX_WORDS_PER_CMDLINE) {
-            child_pids[nchildren++] = pid;
+            child_pids[nchildren] = pid;
+            nchildren += 1;
         } else {
             print_errors();
         }

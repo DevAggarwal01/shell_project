@@ -12,7 +12,7 @@
  * Handles SIGINT (Ctrl + C/ ^C).
  */
 void interrupt_handler() {
-    // attribution (modified here): Section 1.2, https://www.cs.utexas.edu/~ans/classes/cs439/projects/shell_project/shell.html
+    // attribution: Section 1.2, https://www.cs.utexas.edu/~ans/classes/cs439/projects/shell_project/shell.html
     ssize_t bytes;
     const int STDOUT = 1;
     bytes = write(STDOUT, "Nice try.\n", 10);
@@ -26,7 +26,7 @@ void interrupt_handler() {
  * Handles SIGUSR1 (user-defined signal).
  */
 void exit_handler() {
-    // attribution (modified here): Section 1.2, https://www.cs.utexas.edu/~ans/classes/cs439/projects/shell_project/shell.html
+    // attribution (slightly modified here): Section 1.2, https://www.cs.utexas.edu/~ans/classes/cs439/projects/shell_project/shell.html
     ssize_t bytes;
     const int STDOUT = 1;
     bytes = write(STDOUT, "exiting\n", 8);
