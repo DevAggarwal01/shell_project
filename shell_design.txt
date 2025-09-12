@@ -39,22 +39,22 @@ using the Linux command wc.  (Note that rtf files are NOT text files.)
 ################
 TEAM INFO
 ################
-Name:
-EID:
-CS login:
-Email:
-Unique Number:
+Name: Dev Aggarwal
+EID: da34882
+CS login: dev4dev
+Email: dev4dev@cs.utexas.edu
+Unique Number: 54895
 
 
-Name:
-EID:
-CS login:
-Email:
-Unique Number:
+Name: Hrutvik Palutla
+EID: hp22429
+CS login: hrutvikp
+Email: hrutvikp@cs.utexas.edu
+Unique Number: 54905
 
 
 
-Slip Days Used:
+Slip Days Used: 0
 
 
 ################
@@ -71,7 +71,7 @@ Preliminaries
 
 
 (3) Please paste a link to your GitLab repo below.
-
+https://github.com/DevAggarwal01/shell_project.git
 
 ################
 Questions regarding Part 0
@@ -82,10 +82,32 @@ Questions regarding Part 0
     with 0 (the original process) and incrementing for
     each child process.
 
+15 child processes.
+
+Process 0:  fib(5) = 5
+Process 1:  fib(3) = 2
+Process 2:  fib(1) = 1
+Process 3:  fib(1) = 1
+Process 4:  fib(0) = 0
+Process 5:  fib(0) = 1
+Process 6:  fib(3) = 3
+Process 7:  fib(2) = 1
+Process 8:  fib(0) = 0
+Process 9:  fib(0) = 1
+Process 10: fib(2) = 2
+Process 11: fib(1) = 1
+Process 12: fib(1) = 1
+Process 13: fib(0) = 0
+Process 14: fib(0) = 1
 
 (2) Explain how you communicated the return value of the 
     child to the parent. What feature of wait() did you use?
 
+In fib.c's doFib method, the parent processes use waitpid in lines 79 and 94
+to wait for the child processes. When the child process dies, the fibonnaci
+number calculated by the child process is passed in as the status code parameter 
+of the exit call (lines 104 and 64). The status code is retrieved via waitpid and 
+extracted using the WEXITSTATUS macro (lines 80 and 94).
 
 ################
 Questions regarding Part 1
@@ -93,6 +115,11 @@ Questions regarding Part 1
 (1) In the provided utility function signal_action(), what does the call to
   sigaction() do?  Why was sigaction() used instead of signal()?
 
+sigaction() replaces the old handler for the specified signal with a handler provided
+by the user. sigaction() is used instead of signal() because signal() automatically 
+resets the handler after it runs once. Since CTRL+C may be pressed multiple times 
+during the infinite loop, signal() cannot be used since the handler would certainly 
+reset after 1 runthrough.
 
 ################
 Questions regarding Part 2
@@ -106,11 +133,30 @@ Questions regarding Part 2
     Note that you do not need to include concurrent commands in your answer. 
     Part 2 does not include this advanced shell feature.
 
+To represent the fully-parsed command struct, we used an array of char pointers
+to store the program and its arguments, and a char pointer to the program command 
+for convenience.
+
+An alternate data structure that can be used is linked list. One advantage in using
+a linked list for arguments is that the shell never requests more data via malloc
+than is needed for each command line entered by the user. This is in contrast to the
+current implementation in line 185 that requests the maximum amount of bytes that 
+could possibly be in a command line every single time. The disadvantage is that system calls
+expect an array not a linked list, so all data in the linkedlist would need to be copied over to an
+array and freed after the system call. Another disadvantage is that calling malloc for every single
+token would result in a higher volume of malloc calls so there is higher overhead.
+
 
 (2) An invalid script file is one which does not contain anything (i.e. 
     a size zero file). How did you detect and handle this condition?  
     Describe one other (correct) design that you could have used.
 
+If the code runs a script file, then it initally retrieves the 1st character 
+via fgetc at line 69. If the return value from fgetc is equal to the EOF macro (-1),
+then the script file is invalid. 
+
+An alternate approach is to examine what is returned by the 1st getline call.
+If the returned value is -1, then it is an empty file.
 
 ################
 Questions regarding Part 3
@@ -118,6 +164,14 @@ Questions regarding Part 3
 (1) Describe how your implementation ensures that concurrent
     commands are executed concurrently instead of one after 
     another.
+
+If a command line contains multiple concurrent commands, then each command is parsed
+into separate command structs. There is a for loop on line 126 of utsch.c that is iterating
+through each command, and calling eval(). Even though a for loop exists, eval() triggers
+exec_external_cmd() which forks on line 407. So while the child process is executing a command,
+the parent process returns to the for loop iterating over the command and concurrently calls
+eval() again.
+
 
 
 (2) One potential strategy for redirecting output is to run 
@@ -139,3 +193,9 @@ Questions regarding Part 3
   Explain why this technique does not work when used in 
   conjunction with fork-and-exec, and why the dup2() 
   technique does not suffer the same issue.
+
+fopen() contains a close-on-exec flag, such that when exec() runs,
+the file descriptor is discarded which is why it will not work in fork-and-exec.
+dup2() copies the incoming file descriptor, but turns the close-on-exec flag off
+so the output redirection will work in fork-and-exec.
+
