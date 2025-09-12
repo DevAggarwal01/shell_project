@@ -1,0 +1,3 @@
+~/shell_project/tests/test-utils/p2a-ebb ~/shell_project
+Finished syscall tests with counter at 17.
+Finished allocation tests with counter at 35.

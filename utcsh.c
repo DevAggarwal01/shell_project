@@ -23,15 +23,16 @@ char shell_paths[MAX_ENTRIES_IN_SHELLPATH][MAX_CHARS_PER_CMDLINE];
 static char prompt[] = "utcsh> "; /* Command line prompt */
 static char *default_shell_path[2] = {"/bin", NULL};
 static bool isScript = false;
+pid_t child_pids[MAX_WORDS_PER_CMDLINE]; // to hold pids of children launched by eval
+int nchildren = 0; // number of children launched by eval
 /* End Global Variables */
 
 /* Convenience struct for describing a command. Modify this struct as you see
  * fit--add extra members to help you write your code. */
-struct Command
-{
-  char **args;      /* Argument array for the command */
-  char *program;
-  char *outputFile; /* Redirect target for file (NULL means no redirect) */
+struct Command {
+    char **args;      /* Argument array for the command */
+    char *program;
+    char *outputFile; /* Redirect target for file (NULL means no redirect) */
 };
 
 /* Here are the functions we recommend you implement */
@@ -45,6 +46,7 @@ void exec_external_cmd (struct Command *cmd);
 
 int count_args(char **args);
 void print_errors();
+void print_error(char* emsg);
 void remove_tabs(char *str);
 
 /* Main REPL: read, evaluate, and print. This function should remain relatively
@@ -57,16 +59,26 @@ int main (int argc, char **argv) {
     }
     // input: either script file or standard input
     FILE *input = isScript ? fopen(argv[1], "r") : stdin;
+    if (isScript && input == NULL) {
+        // failed to open file
+        print_errors();
+        exit(1);
+    }
     // checks if script is empty
     if (isScript) {
         int c = fgetc(input);
         if (c == EOF) {
-            // file is empty
+            if (ferror(input)) {
+                print_errors(); // actual read error
+            } else {
+                print_errors(); // empty file
+            }
+            exit(1);
+        }
+        if (ungetc(c, input) == EOF) {
             print_errors();
             exit(1);
         }
-        // put the char back so reading starts from beginning if not empty script file
-        ungetc(c, input);
     }
     // if more than two arguments or script file not accessible, exit
     if (argc > 2 || (isScript && input == NULL)) {
@@ -110,12 +122,18 @@ int main (int argc, char **argv) {
         // tokenize command and split it into multiple commands if necessary
         char** tokens = tokenize_command_line(line);
         struct Command *cmds = split_into_commands(tokens);
-        // loop over all commands
+        // evaluate all commands on the line
         for (int i = 0; cmds[i].program != NULL; i++) {
             eval(&cmds[i]);
         }
+        // wait for all external children launched by eval
+        for (int i = 0; i < nchildren; i++) {
+            int status;
+            waitpid(child_pids[i], &status, 0);
+        }
+        nchildren = 0;
 
-        // print part of REPL
+        // print part of REPL: nothing to print for this shell
 
         // free allocated memory
         free(line);
@@ -124,12 +142,15 @@ int main (int argc, char **argv) {
     return 0;
 }
 
+/**
+ * Prints the standard error message to stderr as per the project specifications.
+ */
 void print_errors() {
-  char emsg[30] = "An error has occurred\n";
-  int nbytes_written = write(STDERR_FILENO, emsg, strlen(emsg));
-  if(nbytes_written != strlen(emsg)){
-    exit(2);
-  }
+    char emsg[30] = "An error has occurred\n";
+    int nbytes_written = write(STDERR_FILENO, emsg, strlen(emsg));
+    if(nbytes_written != strlen(emsg)){
+        exit(2);
+    }
 }
 
 
@@ -160,20 +181,36 @@ with your own implementation. */
  * much easier to process. First, you should figure out how many arguments you
  * have, then allocate a char** of sufficient size and fill it using strtok()
  */
-char **tokenize_command_line (char *cmdline) {
-    // to store the tokens
+char** tokenize_command_line(char *cmdline) {
     char** tokens = malloc(sizeof(char*) * MAX_WORDS_PER_CMDLINE);
-    // split line into tokens using strtok and command line
+    if (tokens == NULL) {
+        print_errors();
+        exit(1);
+    }
     char* saveptr;
     char* token = strtok_r(cmdline, " ", &saveptr);
     int i = 0;
-    while (token) {
-        tokens[i] = token;
+    while (token && i < MAX_WORDS_PER_CMDLINE) {
+        char* p = token;
+        while (*p) {
+            if (*p == '&') {
+                // terminate before &
+                if (p != token) {
+                    *p = '\0';
+                    tokens[i++] = token;
+                }
+                // add "&"
+                tokens[i++] = "&";
+                token = p + 1;
+            }
+            p++;
+        }
+        if (*token != '\0') {
+            tokens[i++] = token;
+        }
         token = strtok_r(NULL, " ", &saveptr);
-        i++;
     }
-    // indicate end of tokens
-    tokens[i] = '\0';
+    tokens[i] = NULL;
     return tokens;
 }
 
@@ -185,7 +222,11 @@ char **tokenize_command_line (char *cmdline) {
  */
 struct Command *split_into_commands(char **tokens) {
     // allocate array of commands
-    struct Command* cmds = malloc(sizeof(struct Command) * MAX_WORDS_PER_CMDLINE);
+    struct Command* cmds = malloc(sizeof(struct Command) * MAX_CMDS_PER_CMDLINE);
+    if (cmds == NULL) {
+        print_errors();
+        exit(1);
+    }
     int cmd_count = 0;
     int start = 0;
     // loop through tokens to find & and split commands
@@ -222,7 +263,9 @@ struct Command *split_into_commands(char **tokens) {
  */
 struct Command parse_command(char **tokens) {
     struct Command cmd;
+    cmd.args = NULL;
     cmd.outputFile = NULL;
+    cmd.program = NULL;
     // case for empty command
     if (tokens == NULL || tokens[0] == NULL) {
         return cmd;
@@ -360,7 +403,7 @@ int count_args(char **args) {
  * Execute an external command by fork-and-exec. Should also take care of
  * output redirection, if any is requested
  */
-void exec_external_cmd (struct Command *cmd) {
+void exec_external_cmd(struct Command *cmd) {
     int pid = fork();
     if (pid < 0) {
         // fork failed
@@ -391,9 +434,11 @@ void exec_external_cmd (struct Command *cmd) {
             exit(1);
         }
     } else { 
-        // in parent process
-        int status;
-        waitpid(pid, &status, 0);
+        if (nchildren < MAX_WORDS_PER_CMDLINE) {
+            child_pids[nchildren++] = pid;
+        } else {
+            print_errors();
+        }
     }
     return;
 }
