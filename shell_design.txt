@@ -65,7 +65,8 @@ Preliminaries
     of this project, that should be noted here.
 
     N/A, there are no special considerations here - did not change most of 
-    the provided files and implemented everything.
+    the provided files and implemented everything. The main method is ~70 lines
+    long, but actual code is <60 lines (mostly comments and empty lines).
 
 
 (2) Please cite any offline or online sources you consulted while
@@ -107,11 +108,11 @@ Questions regarding Part 0
 (2) Explain how you communicated the return value of the 
     child to the parent. What feature of wait() did you use?
 
-    In fib.c's doFib method, the parent processes use waitpid in lines 79 and 94
+    In fib.c's doFib method, the parent processes use waitpid in lines 79 and 93
     to wait for the child processes. When the child process dies, the fibonnaci
-    number calculated by the child process is passed in as the status code parameter 
-    of the exit call (lines 104 and 64). The status code is retrieved via waitpid and 
-    extracted using the WEXITSTATUS macro (lines 80 and 94).
+    number calculated by the child process is returned as the status of the exit call 
+    (lines 104 and 64). The status code is retrieved via waitpid and extracted using 
+    the WEXITSTATUS macro for use in calculations (lines 80 and 94).
 
 ################
 Questions regarding Part 1
@@ -119,11 +120,11 @@ Questions regarding Part 1
 (1) In the provided utility function signal_action(), what does the call to
   sigaction() do?  Why was sigaction() used instead of signal()?
 
-    sigaction() replaces the old handler for the specified signal with a handler provided
-    by the user. sigaction() is used instead of signal() because signal() automatically 
-    resets the handler after it runs once. Since CTRL+C may be pressed multiple times 
-    during the infinite loop, signal() cannot be used since the handler would certainly 
-    reset after 1 runthrough.
+    The call to sigaction() replaces the old handler for the specified signal with a 
+    handler provided by the user. sigaction() is used instead of signal() because 
+    signal() automatically resets the handler after it runs once. Since CTRL+C may be 
+    pressed multiple times during the infinite loop, signal() cannot be used since the 
+    handler would certainly reset after 1 runthrough.
 
 ################
 Questions regarding Part 2
@@ -137,30 +138,28 @@ Questions regarding Part 2
     Note that you do not need to include concurrent commands in your answer. 
     Part 2 does not include this advanced shell feature.
 
-To represent the fully-parsed command struct, we used an array of char pointers
-to store the program and its arguments, and a char pointer to the program command 
-for convenience.
+    We just used the default Command struct provided: an array of char pointers
+    for the arguments, a char pointer to the program for convenience, and if any, 
+    an output file parameter for redirection purposes.
 
-An alternate data structure that can be used is linked list. One advantage in using
-a linked list for arguments is that the shell never requests more data via malloc
-than is needed for each command line entered by the user. This is in contrast to the
-current implementation in line 185 that requests the maximum amount of bytes that 
-could possibly be in a command line every single time. The disadvantage is that system calls
-expect an array not a linked list, so all data in the linkedlist would need to be copied over to an
-array and freed after the system call. Another disadvantage is that calling malloc for every single
-token would result in a higher volume of malloc calls so there is higher overhead.
-
+    An alternate data structure that can be used for storing the arguments is a linked list,
+    instead of an array of char pointers. One advantage in using a linked list for arguments
+    is that the shell never requests more data via malloc than is needed for each command 
+    entered by the user. This is in contrast to the current implementation in line 184 that 
+    requests the maximum amount of bytes that could possibly be in a command line every single time. 
+    The disadvantage is that system calls expect an array not a linked list, so all data in the 
+    linked list would need to be copied over to an array and freed after the system call.
 
 (2) An invalid script file is one which does not contain anything (i.e. 
     a size zero file). How did you detect and handle this condition?  
     Describe one other (correct) design that you could have used.
 
-If the code runs a script file, then it initally retrieves the 1st character 
-via fgetc at line 69. If the return value from fgetc is equal to the EOF macro (-1),
-then the script file is invalid. 
+    If the code runs a script file and the file exists, inside the getInput method that is
+    used in the file, it gets the first character of the script file via fgetc at line 162. 
+    If the return value from fgetc is equal to the EOF macro (-1), then the script file is invalid. 
 
-An alternate approach is to examine what is returned by the 1st getline call.
-If the returned value is -1, then it is an empty file.
+    An alternate approach is to examine what is returned by the 1st getLine call.
+    If the returned value is -1, then it is an empty file.
 
 ################
 Questions regarding Part 3
@@ -169,37 +168,38 @@ Questions regarding Part 3
     commands are executed concurrently instead of one after 
     another.
 
-If a command line contains multiple concurrent commands, then each command is parsed
-into separate command structs. There is a for loop on line 126 of utsch.c that is iterating
-through each command, and calling eval(). Even though a for loop exists, eval() triggers
-exec_external_cmd() which forks on line 407. So while the child process is executing a command,
-the parent process returns to the for loop iterating over the command and concurrently calls
-eval() again. Then, the parent waits for all the concurrent commands to finish in the for loop
-
+    If a command line contains multiple concurrent commands, then each command is parsed
+    into separate command structs. There is a for loop on line 107 of utsch.c that is iterating
+    through each command, and calling eval(). Even though a for loop exists, eval() triggers
+    exec_external_cmd() which forks on line 414. While the child process is executing a command,
+    the parent process process stores the process ID in a global variable and returns to the for 
+    loop, iterating over the command and calling eval() again, with forks concurrently. After all
+    concurrent commands are forked, the parent waits for all the concurrent commands to finish using
+    the global array of process IDs (resets this array by changing the count of childreen)
 
 
 (2) One potential strategy for redirecting output is to run 
     the following code:
 
-  ```
-  FILE* output = fopen(filename, "w");
-  stdout = output;
-  stderr = output;
-  ```
+    ```
+    FILE* output = fopen(filename, "w");
+    stdout = output;
+    stderr = output;
+    ```
 
-  This causes everything that would normally be written to 
-  `stdout` to instead be written to the file described by 
-  filename. Unfortunately, this strategy does not work for 
-  output redirection in utcsh. More generally, it does not
-  work any time fork-and-exec is used and we want to 
-  redirect the output of the child process.
+    This causes everything that would normally be written to 
+    `stdout` to instead be written to the file described by 
+    filename. Unfortunately, this strategy does not work for 
+    output redirection in utcsh. More generally, it does not
+    work any time fork-and-exec is used and we want to 
+    redirect the output of the child process.
 
-  Explain why this technique does not work when used in 
-  conjunction with fork-and-exec, and why the dup2() 
-  technique does not suffer the same issue.
+    Explain why this technique does not work when used in 
+    conjunction with fork-and-exec, and why the dup2() 
+    technique does not suffer the same issue.
 
-fopen() contains a close-on-exec flag, such that when exec() runs,
-the file descriptor is discarded which is why it will not work in fork-and-exec.
-dup2() copies the incoming file descriptor, but turns the close-on-exec flag off
-so the output redirection will work in fork-and-exec.
+    fopen() contains a close-on-exec flag, such that when exec() runs,
+    the file descriptor is discarded which is why it will not work in fork-and-exec.
+    dup2() copies the incoming file descriptor, but turns the close-on-exec flag off
+    so the output redirection will work in fork-and-exec.
 

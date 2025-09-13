@@ -39,6 +39,7 @@ struct Command {
 
 
 /* MAIN FUNCTIONS*/
+FILE* getInput(int argc, char** argv);
 char **tokenize_command_line (char *cmdline);
 struct Command *split_into_commands(char **tokens);
 struct Command parse_command (char **tokens);
@@ -58,35 +59,11 @@ void remove_tabs(char *str);
    short: if it grows beyond 60 lines, you're doing too much in main() and
    should try to move some of that work into other functions. */
 int main (int argc, char **argv) {
-    // two arguments: command, script file [more is error]
-    if (argc == 2) {
-        isScript = true;
-    } if (argc > 2) {
-        print_errors();
-        exit(1);
-    }
-    // input: either script file or standard input
-    FILE *input = isScript ? fopen(argv[1], "r") : stdin;
-    if (isScript && input == NULL) {
-        // failed to open file
-        print_errors();
-        exit(1);
-    }
-    if (isScript) {
-        // checks if script is empty by checking if first character is EOF
-        int c = fgetc(input);
-        if (c == EOF) {
-            print_errors();
-            fclose(input);
-            exit(1);
-        }
-        // put character back for future reading
-        c = ungetc(c, input);
-    }
-
+    // input: either script file or standard input (exit here if issues)
+    FILE* input = getInput(argc, argv);
     // initialize shell path to default path (may be changed later by path command)
     set_shell_path(default_shell_path);
-    
+
     // REPl (read-evaluate-print loop)
     while (true) {
         // print shell prompt if no script
@@ -111,10 +88,6 @@ int main (int argc, char **argv) {
         }
         // guards against empty lines
         remove_tabs(line);
-        if (*line == '\0') {
-            free(line);
-            continue;
-        }
 
         // evaluate part of REPL
         // tokenize command and split it into multiple commands if necessary
@@ -144,15 +117,9 @@ int main (int argc, char **argv) {
         // print part of REPL: nothing to print for this shell
 
         // free allocated memory
-        if (line != NULL) {
-            free(line); // tokens arrays has pointers into line (and cmds also point to tokens), so free line first
-        }
-        if (tokens != NULL) {
-            free(tokens); // free tokens array (not the strings inside, those are already freed)
-        }
-        if (commands != NULL) {
-            free(commands); // free commands array (not the strings inside, those are already freed)
-        }
+        free(line); // tokens arrays has pointers into line (and cmds also point to tokens), so free line first
+        free(tokens); // free tokens array (not the strings inside, those are already freed)
+        free(commands); // free commands array (not the strings inside, those are already freed)
         if (exitCmd) {
             // exit with appropriate code if we need to exit early due to errors, closing input first
             fclose(input);
@@ -165,54 +132,45 @@ int main (int argc, char **argv) {
 }
 
 
-/* HELPER FUNCTIONS */
-
-/**
- * Prints the standard error message to stderr.
- */
-void print_errors() {
-    // Attribution (slighly modified here): Section 2.4, https://www.cs.utexas.edu/~ans/classes/cs439/projects/shell_project/shell.html
-    char emsg[30] = "An error has occurred\n";
-    size_t nbytes_written = write(STDERR_FILENO, emsg, strlen(emsg));
-    if (nbytes_written != strlen(emsg)) {
-        exit(2);
-    }
-}
-
-
-/**
- * Removes all tab characters from a string in place.
- */
-void remove_tabs(char *s) {
-    // in place removal of tabs
-    char* src = s;
-    char* dst = s;
-    // copy over non-tab characters
-    while (*src != '\0') {
-        if (*src != '\t') {
-            *dst = *src;
-            dst += 1;
-        }
-        src += 1;
-    }
-    // null terminate the new string
-    *dst = '\0';
-}
-
-
-/** 
- * Count the number of arguments in a command.
- */
-int count_args(char **args) {
-    int count = 0;
-    while (args[count] != NULL) {
-        count++;
-    }
-    return count;
-}
-
-
 /* PRIMARY FUNCTIONS */
+
+/**
+ * Handles input file opening and error checking.
+ * If argc > 2, prints error and exits.
+ * If no input file is provided, returns stdin.
+ * If input file is provided but cannot be opened, prints error and exits.
+ * If input file is empty, prints error and exits.
+ * Returns a valid FILE* otherwise.
+ */
+FILE* getInput(int argc, char** argv) {
+    // two arguments: shell program name and optional script file (if more, error)
+    if (argc == 2) {
+        isScript = true;
+    } if (argc > 2) {
+        print_errors();
+        exit(1);
+    }
+    // input: either script file or standard input
+    FILE* input = isScript ? fopen(argv[1], "r") : stdin;
+    if (isScript && input == NULL) {
+        // failed to open file
+        print_errors();
+        exit(1);
+    }
+    if (isScript) {
+        // checks if script is empty by checking if first character is EOF
+        int c = fgetc(input);
+        if (c == EOF) {
+            print_errors();
+            fclose(input);
+            exit(1);
+        }
+        // put character back for future reading
+        c = ungetc(c, input);
+    }
+    return input;
+}
+
 
 /** 
  * Turns a command line into tokens with strtok.
@@ -360,6 +318,7 @@ struct Command parse_command(char **tokens) {
  *
  * Both built-ins and external commands can be passed to this function--it
  * should work out what the correct type is and take the appropriate action.
+ * 
  * Returns false if no exit is needed, true if exit is needed.
  */
 bool eval(struct Command *cmd) {
@@ -372,11 +331,12 @@ bool eval(struct Command *cmd) {
     if (builtinStatus == 1) {
         return false; 
     } else if (builtinStatus == 2) {
-        return true; // indicate exit
+        return true;
     }
     // we have an external command
-    // check if absolute path
-    if(!is_absolute_path(cmd->program)) {
+    // check if absolute path, and have a bool to track if we program due to relative path
+    bool changedProgramPath = false;
+    if (!is_absolute_path(cmd->program)) {
         bool found = false;
         // if not absolute, loop through shell paths and find the right shell path
         for(int i = 0; i < MAX_ENTRIES_IN_SHELLPATH; i++) {
@@ -389,6 +349,7 @@ bool eval(struct Command *cmd) {
             if (fullPath != NULL) {
                 cmd->program = fullPath;
                 cmd->args[0] = fullPath;
+                changedProgramPath = true;
                 found = true;
                 break;
             }
@@ -401,6 +362,10 @@ bool eval(struct Command *cmd) {
     }
     // execute the external command
     exec_external_cmd(cmd);
+    if (changedProgramPath) {
+        // free the full path we allocated in exe_exists_in_dir
+        free(cmd->program);
+    }
     return false;
 }
 
@@ -443,7 +408,7 @@ int try_exec_builtin (struct Command *cmd) {
  * Executes an external command.
  *
  * Execute an external command by fork-and-exec. Should also take care of
- * output redirection, if any is requested
+ * output redirection, if any is requested.
  */
 void exec_external_cmd(struct Command *cmd) {
     int pid = fork();
@@ -454,19 +419,19 @@ void exec_external_cmd(struct Command *cmd) {
         // in child process: execute the command
         // if redirection requested
         if (cmd->outputFile != NULL) {
-            // create/truncate output file, permissions rw-rw-rw-
-            int fileDescriptor = open(cmd->outputFile, O_CREAT | O_WRONLY | O_TRUNC, 0666);
+            // create/truncate output file, permissions user read/write, group read, others read
+            int fileDescriptor = open(cmd->outputFile, O_CREAT | O_WRONLY | O_TRUNC, 0644);
             if (fileDescriptor < 0) {
                 print_errors();
             }
-            // duplicate file descriptor onto stdout and stderr, prnt errors if fails
+            // duplicate file descriptor onto stdout and stderr, print errors if fails
             if (dup2(fileDescriptor, STDOUT_FILENO) < 0 || dup2(fileDescriptor, STDERR_FILENO) < 0) {
                 print_errors();
                 close(fileDescriptor);
             }
             close(fileDescriptor);
         }
-        // now execute the external command
+        // now execute the external command, exiting if exec fails
         if (execv(cmd->program, cmd->args) == -1) {
             print_errors();
             exit(1);
@@ -480,4 +445,51 @@ void exec_external_cmd(struct Command *cmd) {
             print_errors();
         }
     }
+}
+
+
+/* HELPER FUNCTIONS */
+
+/**
+ * Prints the standard error message to stderr.
+ */
+void print_errors() {
+    // Attribution (slighly modified here): Section 2.4, https://www.cs.utexas.edu/~ans/classes/cs439/projects/shell_project/shell.html
+    char emsg[30] = "An error has occurred\n";
+    size_t nbytes_written = write(STDERR_FILENO, emsg, strlen(emsg));
+    if (nbytes_written != strlen(emsg)) {
+        exit(2);
+    }
+}
+
+
+/**
+ * Removes all tab characters from a string in place.
+ */
+void remove_tabs(char *s) {
+    // in place removal of tabs
+    char* src = s;
+    char* dst = s;
+    // copy over non-tab characters
+    while (*src != '\0') {
+        if (*src != '\t') {
+            *dst = *src;
+            dst += 1;
+        }
+        src += 1;
+    }
+    // null terminate the new string
+    *dst = '\0';
+}
+
+
+/** 
+ * Count the number of arguments in a command.
+ */
+int count_args(char **args) {
+    int count = 0;
+    while (args[count] != NULL) {
+        count++;
+    }
+    return count;
 }
