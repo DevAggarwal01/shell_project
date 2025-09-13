@@ -15,6 +15,7 @@ in the future */
 #include <ctype.h>
 #include <unistd.h>
 #include <fcntl.h> 
+#include <wait.h>
 
 
 /* Global variables */
@@ -27,6 +28,7 @@ pid_t child_pids[MAX_WORDS_PER_CMDLINE]; // to hold pids of children launched by
 int nchildren = 0; // number of children launched by eval
 /* End Global Variables */
 
+
 /* Convenience struct for describing a command. Modify this struct as you see
  * fit--add extra members to help you write your code. */
 struct Command {
@@ -35,18 +37,22 @@ struct Command {
     char *outputFile; /* Redirect target for file (NULL means no redirect) */
 };
 
-/* Here are the functions we recommend you implement */
 
+/* MAIN FUNCTIONS*/
 char **tokenize_command_line (char *cmdline);
 struct Command *split_into_commands(char **tokens);
 struct Command parse_command (char **tokens);
-void eval (struct Command *cmd);
+bool eval (struct Command *cmd);
 int try_exec_builtin (struct Command *cmd);
 void exec_external_cmd (struct Command *cmd);
 
+/*HELPER FUNCTIONS*/
 int count_args(char **args);
 void print_errors();
 void remove_tabs(char *str);
+
+
+/* MAIN METHOD */
 
 /* Main REPL: read, evaluate, and print. This function should remain relatively
    short: if it grows beyond 60 lines, you're doing too much in main() and
@@ -71,17 +77,16 @@ int main (int argc, char **argv) {
         int c = fgetc(input);
         if (c == EOF) {
             print_errors();
+            fclose(input);
             exit(1);
         }
         // put character back for future reading
         c = ungetc(c, input);
     }
+
     // initialize shell path to default path (may be changed later by path command)
     set_shell_path(default_shell_path);
-
-    __ssize_t lineSize;
-    size_t len = 0;
-
+    
     // REPl (read-evaluate-print loop)
     while (true) {
         // print shell prompt if no script
@@ -90,12 +95,14 @@ int main (int argc, char **argv) {
         }
 
         // read part of REPL
-        // getline will allocate memory for line, which we must free later
+        // get a line of input
+        __ssize_t lineSize;
+        size_t len = 0;
         char* line = NULL;
         lineSize = getline(&line, &len, input);
         if(lineSize == -1) {
             free(line);
-            exit(0);
+            break;
         }
         // strip newline character if present
         if (lineSize > 0 && line[lineSize - 1] == '\n') {
@@ -112,10 +119,20 @@ int main (int argc, char **argv) {
         // evaluate part of REPL
         // tokenize command and split it into multiple commands if necessary
         char** tokens = tokenize_command_line(line);
-        struct Command *cmds = split_into_commands(tokens);
+        if (tokens == NULL) {
+            free(line);
+            continue;
+        }
+        struct Command *commands = split_into_commands(tokens);
+        if (commands == NULL) {
+            free(line);
+            free(tokens);
+            continue;
+        }
         // evaluate all commands on the line (concurrently if multiple)
-        for (int i = 0; cmds[i].program != NULL; i++) {
-            eval(&cmds[i]);
+        bool exitCmd = false;
+        for (int i = 0; commands[i].program != NULL; i++) {
+            exitCmd = eval(&commands[i]) ? true : exitCmd;
         }
         // wait for all external children launched by eval
         for (int i = 0; i < nchildren; i++) {
@@ -127,22 +144,36 @@ int main (int argc, char **argv) {
         // print part of REPL: nothing to print for this shell
 
         // free allocated memory
-        free(line); // tokens arrays has pointers into line (and cmds also point to tokens), so free line first
-        free(tokens); // free tokens array (not the strings inside, those are already freed)
-        free(cmds); // free commands array (not the strings inside, those are already freed)
+        if (line != NULL) {
+            free(line); // tokens arrays has pointers into line (and cmds also point to tokens), so free line first
+        }
+        if (tokens != NULL) {
+            free(tokens); // free tokens array (not the strings inside, those are already freed)
+        }
+        if (commands != NULL) {
+            free(commands); // free commands array (not the strings inside, those are already freed)
+        }
+        if (exitCmd) {
+            // exit with appropriate code if we need to exit early due to errors, closing input first
+            fclose(input);
+            exit(0);
+        }
     }
     // close the input
     fclose(input);
     return 0;
 }
 
+
+/* HELPER FUNCTIONS */
+
 /**
- * Prints the standard error message to stderr as per the project specifications.
+ * Prints the standard error message to stderr.
  */
 void print_errors() {
-    // Attribution: Section 2.4, https://www.cs.utexas.edu/~ans/classes/cs439/projects/shell_project/shell.html
+    // Attribution (slighly modified here): Section 2.4, https://www.cs.utexas.edu/~ans/classes/cs439/projects/shell_project/shell.html
     char emsg[30] = "An error has occurred\n";
-    int nbytes_written = write(STDERR_FILENO, emsg, strlen(emsg));
+    size_t nbytes_written = write(STDERR_FILENO, emsg, strlen(emsg));
     if (nbytes_written != strlen(emsg)) {
         exit(2);
     }
@@ -168,7 +199,20 @@ void remove_tabs(char *s) {
     *dst = '\0';
 }
 
-/* MAIN FUNCTIONS */
+
+/** 
+ * Count the number of arguments in a command.
+ */
+int count_args(char **args) {
+    int count = 0;
+    while (args[count] != NULL) {
+        count++;
+    }
+    return count;
+}
+
+
+/* PRIMARY FUNCTIONS */
 
 /** 
  * Turns a command line into tokens with strtok.
@@ -181,9 +225,8 @@ char** tokenize_command_line(char *cmdline) {
     // allocate array of tokens
     char** tokens = malloc(sizeof(char*) * MAX_WORDS_PER_CMDLINE);
     if (tokens == NULL) {
-        // if allocation fails, print error and exit
-        print_errors();
-        exit(1);
+        // if allocation fails, return NULL
+        return NULL;
     }
     // tokenize command line by spaces, but also separate out & if present
     char* saveptr;
@@ -230,8 +273,8 @@ struct Command *split_into_commands(char **tokens) {
     // allocate array of commands
     struct Command* cmds = malloc(sizeof(struct Command) * MAX_CMDS_PER_CMDLINE);
     if (cmds == NULL) {
-        print_errors();
-        exit(1);
+        // if allocation fails, return NULL
+        return NULL;
     }
     int cmd_count = 0;
     int start = 0;
@@ -317,15 +360,19 @@ struct Command parse_command(char **tokens) {
  *
  * Both built-ins and external commands can be passed to this function--it
  * should work out what the correct type is and take the appropriate action.
+ * Returns false if no exit is needed, true if exit is needed.
  */
-void eval(struct Command *cmd) {
+bool eval(struct Command *cmd) {
     // null check
     if (cmd == NULL || cmd->program == NULL) {
-        return;
+        return false;
     }
     // if it was a built-in command and we've executed it, can return
-    if (try_exec_builtin(cmd) == 1) {
-        return; 
+    int builtinStatus = try_exec_builtin(cmd);
+    if (builtinStatus == 1) {
+        return false; 
+    } else if (builtinStatus == 2) {
+        return true; // indicate exit
     }
     // we have an external command
     // check if absolute path
@@ -349,58 +396,46 @@ void eval(struct Command *cmd) {
         // if not external not found, print errors and return
         if (!found) {
             print_errors();
-            return;
+            return false;
         }
     }
     // execute the external command
     exec_external_cmd(cmd);
+    return false;
 }
 
 
 /** 
  * Executes built-in commands (exit, cd, path)
- * - If the command is a built-in command, execute it and return 1 (regardless of error or not).
+ * - If the command is "exit", and it is valid, return 2.
+ * - If the command is a built-in command, execute it and return 1 (regardless of whether error happens or not).
  * - If the command is not a built-in command, do nothing and return 0.
  */
 int try_exec_builtin (struct Command *cmd) {
-    // case for exit: make sure no extra args (if so, error) and exit process
+    // cases for built-in commands
     if (strcmp(cmd->program, "exit") == 0) {
+        // case for exit: make sure no extra args and exit process if command valid
         if (count_args(cmd->args) != 1) {
             print_errors();
             return 1;
+        } else {
+            return 2; // indicate exit
         }
-        exit(0);
-    }
-    // case for cd: make sure exactly one arg (if not, error) and chdir to that directory (if fails, error)
-    if (strcmp(cmd->program, "cd") == 0) {
-        if (count_args(cmd->args) != 2) {
-            print_errors();
-            return 1;
-        }
-        if (chdir(cmd->args[1]) == -1) {
+    } else if (strcmp(cmd->program, "cd") == 0) {
+        // case for cd: make sure exactly one arg (if not, error) and chdir to that directory (if fails, error)
+        if (count_args(cmd->args) != 2 || chdir(cmd->args[1]) == -1) {
             print_errors();
         }
         return 1;
-    }
-    // case for path: set shell path to args after "path" (if fails, error)
-    if(strcmp(cmd->program, "path") == 0) {
+    } else if (strcmp(cmd->program, "path") == 0) {
+        // case for path: set shell path to args after "path" (if fails, error)
         if(set_shell_path(&cmd->args[1]) == 0) {
             print_errors();
         }
         return 1;
     }
+    // not a built-in command
     return 0;
-}
-
-/** 
- * Count the number of arguments in a command (command presented as null-terminated array of strings).
- */
-int count_args(char **args) {
-    int count = 0;
-    while (args[count] != NULL) {
-        count++;
-    }
-    return count;
 }
 
 
@@ -415,26 +450,22 @@ void exec_external_cmd(struct Command *cmd) {
     if (pid < 0) {
         // fork failed
         print_errors();
-        exit(1);
-    } else if(pid == 0) {
-        // in child process: execute the command and exit (if error, print error and exit with 1)
+    } else if (pid == 0) {
+        // in child process: execute the command
         // if redirection requested
         if (cmd->outputFile != NULL) {
             // create/truncate output file, permissions rw-rw-rw-
             int fileDescriptor = open(cmd->outputFile, O_CREAT | O_WRONLY | O_TRUNC, 0666);
             if (fileDescriptor < 0) {
                 print_errors();
-                exit(1);
             }
             // duplicate file descriptor onto stdout and stderr, prnt errors if fails
             if (dup2(fileDescriptor, STDOUT_FILENO) < 0 || dup2(fileDescriptor, STDERR_FILENO) < 0) {
                 print_errors();
                 close(fileDescriptor);
-                exit(1);
             }
             close(fileDescriptor);
         }
-
         // now execute the external command
         if (execv(cmd->program, cmd->args) == -1) {
             print_errors();
@@ -449,5 +480,4 @@ void exec_external_cmd(struct Command *cmd) {
             print_errors();
         }
     }
-    return;
 }

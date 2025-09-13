@@ -34,7 +34,7 @@ void exit_handler() {
         exit(-999);
     }
     // end the process
-    exit(0);
+    exit(1);
 }
 
 

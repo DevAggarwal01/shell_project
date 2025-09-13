@@ -46,7 +46,7 @@ Email: dev4dev@cs.utexas.edu
 Unique Number: 54895
 
 
-Name: Hrutvik Palutla
+Name: Hrutvik Rao Palutla Venkata
 EID: hp22429
 CS login: hrutvikp
 Email: hrutvikp@cs.utexas.edu
@@ -64,10 +64,15 @@ Preliminaries
     the TA, please give them here.  If you did not implement all portions
     of this project, that should be noted here.
 
+    N/A, there are no special considerations here - did not change most of 
+    the provided files and implemented everything.
+
 
 (2) Please cite any offline or online sources you consulted while
     preparing your submission, other than the Linux documentation,
     course text, and lecture notes.
+
+    Only the project webpage and the provided reading in the project webpage.
 
 
 (3) Please paste a link to your GitLab repo below.
@@ -82,32 +87,31 @@ Questions regarding Part 0
     with 0 (the original process) and incrementing for
     each child process.
 
-15 child processes.
-
-Process 0:  fib(5) = 5
-Process 1:  fib(3) = 2
-Process 2:  fib(1) = 1
-Process 3:  fib(1) = 1
-Process 4:  fib(0) = 0
-Process 5:  fib(0) = 1
-Process 6:  fib(3) = 3
-Process 7:  fib(2) = 1
-Process 8:  fib(0) = 0
-Process 9:  fib(0) = 1
-Process 10: fib(2) = 2
-Process 11: fib(1) = 1
-Process 12: fib(1) = 1
-Process 13: fib(0) = 0
-Process 14: fib(0) = 1
+    There are 15 child processes created. All child process return with exit status.
+    Process 0:  doFib(5, 1) = 5 (prints result here)
+    Process 1:  doFib(3, 0) = 2
+    Process 2:  doFib(1, 0) = 1
+    Process 3:  doFib(1, 0) = 1
+    Process 4:  doFib(0, 0) = 0
+    Process 5:  doFib(0, 0) = 1
+    Process 6:  doFib(3, 0) = 3
+    Process 7:  doFib(2, 0) = 1
+    Process 8:  doFib(0, 0) = 0
+    Process 9:  doFib(0, 0) = 1
+    Process 10: doFib(2, 0) = 2
+    Process 11: doFib(1, 0) = 1
+    Process 12: doFib(1, 0) = 1
+    Process 13: doFib(0, 0) = 0
+    Process 14: doFib(0, 0) = 1
 
 (2) Explain how you communicated the return value of the 
     child to the parent. What feature of wait() did you use?
 
-In fib.c's doFib method, the parent processes use waitpid in lines 79 and 94
-to wait for the child processes. When the child process dies, the fibonnaci
-number calculated by the child process is passed in as the status code parameter 
-of the exit call (lines 104 and 64). The status code is retrieved via waitpid and 
-extracted using the WEXITSTATUS macro (lines 80 and 94).
+    In fib.c's doFib method, the parent processes use waitpid in lines 79 and 94
+    to wait for the child processes. When the child process dies, the fibonnaci
+    number calculated by the child process is passed in as the status code parameter 
+    of the exit call (lines 104 and 64). The status code is retrieved via waitpid and 
+    extracted using the WEXITSTATUS macro (lines 80 and 94).
 
 ################
 Questions regarding Part 1
@@ -115,11 +119,11 @@ Questions regarding Part 1
 (1) In the provided utility function signal_action(), what does the call to
   sigaction() do?  Why was sigaction() used instead of signal()?
 
-sigaction() replaces the old handler for the specified signal with a handler provided
-by the user. sigaction() is used instead of signal() because signal() automatically 
-resets the handler after it runs once. Since CTRL+C may be pressed multiple times 
-during the infinite loop, signal() cannot be used since the handler would certainly 
-reset after 1 runthrough.
+    sigaction() replaces the old handler for the specified signal with a handler provided
+    by the user. sigaction() is used instead of signal() because signal() automatically 
+    resets the handler after it runs once. Since CTRL+C may be pressed multiple times 
+    during the infinite loop, signal() cannot be used since the handler would certainly 
+    reset after 1 runthrough.
 
 ################
 Questions regarding Part 2
@@ -170,7 +174,7 @@ into separate command structs. There is a for loop on line 126 of utsch.c that i
 through each command, and calling eval(). Even though a for loop exists, eval() triggers
 exec_external_cmd() which forks on line 407. So while the child process is executing a command,
 the parent process returns to the for loop iterating over the command and concurrently calls
-eval() again.
+eval() again. Then, the parent waits for all the concurrent commands to finish in the for loop
 
 
 

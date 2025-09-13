@@ -63,7 +63,7 @@ static void doFib (int n, int doPrint) {
         // status is just Fibonacci number if result is needed
         exit(n);
     }
-
+    
     // need two processes to get the two numbers before this one in the Fibonacci sequence
     // process 1: previous previous Fibonacci number (fib1)
     pid_t process1 = fork();
